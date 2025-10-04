@@ -115,3 +115,27 @@ save_media_cover:
               label: "Small (120x120)"
             - value: "large"
               label: "Large (160x160)"
+              
+              
+get_forecasts:
+  name: Get Weather Forecasts
+  description: Get weather forecasts and update sensor for ESPHome access
+  fields:
+    entity_id:
+      name: Entity ID
+      description: Weather entity ID
+      required: true
+      selector:
+        entity:
+          domain: weather
+    type:
+      name: Forecast Type
+      description: Type of forecast (daily or hourly)
+      required: true
+      selector:
+        select:
+          options:
+            - value: "daily"
+              label: "Daily"
+            - value: "hourly"
+              label: "Hourly"

@@ -5,7 +5,11 @@ STORAGE_KEY = f"{DOMAIN}.storage"
 STORAGE_VERSION = 1
 SENSOR_ENTITY_ID = "sensor.display_tools"
 
-# Доступные категории переводов
+# Sensor IDs for weather forecasts
+FORECAST_DAILY_SENSOR = "sensor.display_tools_forecasts_daily"
+FORECAST_HOURLY_SENSOR = "sensor.display_tools_forecasts_hourly"
+
+# Available translation categories
 TRANSLATION_CATEGORIES = [
     'title',
     'state', 
@@ -25,8 +29,11 @@ TRANSLATION_CATEGORIES = [
     'services'
 ]
 
-# Размеры изображений для обложек
+# Cover image sizes
 COVER_SIZES = {
     'small': (120, 120),
     'large': (160, 160)
 }
+
+# Weather forecast types
+FORECAST_TYPES = ['daily', 'hourly']

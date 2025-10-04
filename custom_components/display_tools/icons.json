@@ -11,6 +11,9 @@
     },
     "save_media_cover": {
       "service": "mdi:image-frame"
+    },
+    "get_forecasts": {
+      "service": "mdi:weather-partly-cloudy"
     }
   }
 }

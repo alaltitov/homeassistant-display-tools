@@ -71,6 +71,20 @@
           "description": "Image size preset (small: 120x120, large: 160x160)"
         }
       }
+    },
+    "get_forecasts": {
+      "name": "Get Weather Forecasts",
+      "description": "Get weather forecasts and update sensor for ESPHome access",
+      "fields": {
+        "entity_id": {
+          "name": "Entity ID",
+          "description": "Weather entity ID"
+        },
+        "type": {
+          "name": "Forecast Type",
+          "description": "Type of forecast (daily or hourly)"
+        }
+      }
     }
   }
 }

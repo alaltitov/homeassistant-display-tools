@@ -1,8 +1,8 @@
 """
 Display Tools integration for Home Assistant.
 
-This integration provides services to fetch translations from Home Assistant's backend
-and process media player cover images for display devices.
+This integration provides services to fetch translations from Home Assistant's backend,
+process media player cover images for display devices, and normalize weather forecast data.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import voluptuous as vol
 from PIL import Image
 from io import BytesIO
 import json
+from datetime import datetime, timezone
 
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.config_entries import ConfigEntry
@@ -21,7 +22,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
 from homeassistant.components.frontend import async_get_translations
 
-from .const import DOMAIN, STORAGE_KEY, STORAGE_VERSION, SENSOR_ENTITY_ID, TRANSLATION_CATEGORIES, COVER_SIZES
+from .const import DOMAIN, STORAGE_KEY, STORAGE_VERSION, SENSOR_ENTITY_ID, TRANSLATION_CATEGORIES, COVER_SIZES, FORECAST_TYPES, FORECAST_DAILY_SENSOR, FORECAST_HOURLY_SENSOR
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +55,13 @@ SAVE_MEDIA_COVER_SCHEMA = vol.Schema({
     vol.Required('entity_id'): cv.entity_id,
     vol.Required('size'): vol.In(['small', 'large']),
 })
+
+# Schema for get_forecasts service
+GET_FORECASTS_SCHEMA = vol.Schema({
+    vol.Required('entity_id'): cv.entity_id,
+    vol.Required('type'): vol.In(FORECAST_TYPES),
+})
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Display Tools integration from configuration."""
@@ -114,29 +122,29 @@ async def _download_and_process_cover(hass: HomeAssistant, entity_id: str, size:
         bool: True if successful, False otherwise
     """
     try:
-        # Получаем состояние сущности
+        # Get entity state
         state = hass.states.get(entity_id)
         if not state:
             _LOGGER.error(f"Entity {entity_id} not found")
             return False
         
-        # Получаем URL изображения из атрибута entity_picture
+        # Get image URL from entity_picture attribute
         entity_picture = state.attributes.get('entity_picture')
         if not entity_picture:
             _LOGGER.error(f"No entity_picture found for {entity_id}")
             return False
         
-        # Формируем полный URL если это относительный путь
+        # Build full URL if relative path
         if entity_picture.startswith('/'):
             base_url = f"http://localhost:{hass.http.server_port}"
             image_url = f"{base_url}{entity_picture}"
         else:
             image_url = entity_picture
         
-        # Получаем размеры для обработки
+        # Get target size
         target_size = COVER_SIZES[size]
         
-        # Скачиваем изображение
+        # Download image
         async with aiohttp.ClientSession() as session:
             async with session.get(image_url) as response:
                 if response.status != 200:
@@ -145,33 +153,33 @@ async def _download_and_process_cover(hass: HomeAssistant, entity_id: str, size:
                 
                 image_data = await response.read()
         
-        # Обрабатываем изображение с помощью PIL
+        # Process image with PIL
         try:
-            # Открываем изображение
+            # Open image
             img = Image.open(BytesIO(image_data))
             
-            # Конвертируем в RGB если необходимо (для JPEG)
+            # Convert to RGB if needed (for JPEG)
             if img.mode in ('RGBA', 'P'):
                 img = img.convert('RGB')
             
-            # Изменяем размер с сохранением пропорций
+            # Resize with aspect ratio preserved
             img.thumbnail(target_size, Image.Resampling.LANCZOS)
             
-            # Создаем новое изображение с точными размерами и центрируем
+            # Create new image with exact dimensions and center content
             new_img = Image.new('RGB', target_size, (0, 0, 0))
             
-            # Вычисляем позицию для центрирования
+            # Calculate position for centering
             x = (target_size[0] - img.width) // 2
             y = (target_size[1] - img.height) // 2
             
-            # Вставляем изображение по центру
+            # Paste image centered
             new_img.paste(img, (x, y))
             
-            # Создаем директорию если не существует
+            # Create directory if not exists
             output_dir = "/config/www/display_tools"
             os.makedirs(output_dir, exist_ok=True)
             
-            # Сохраняем изображение
+            # Save image
             output_path = os.path.join(output_dir, "cover.jpeg")
             new_img.save(output_path, "JPEG", quality=85)
             
@@ -186,6 +194,63 @@ async def _download_and_process_cover(hass: HomeAssistant, entity_id: str, size:
         _LOGGER.error(f"Error in _download_and_process_cover: {e}")
         return False
 
+def _filter_forecast_attributes(forecast_item: dict) -> dict:
+    """
+    Filter forecast item to keep only essential attributes.
+    Normalizes datetime to ISO string format in UTC.
+    
+    Args:
+        forecast_item (dict): Original forecast item
+        
+    Returns:
+        dict: Filtered forecast with only condition, datetime (as UTC string), temperature
+    """
+    # Get datetime value
+    dt = forecast_item.get("datetime", "")
+    
+    # Normalize datetime to UTC ISO string
+    if dt:
+        if isinstance(dt, datetime):
+            # If datetime object, convert to UTC
+            if dt.tzinfo is None:
+                # If no timezone, assume UTC
+                dt_utc = dt.replace(tzinfo=timezone.utc)
+            else:
+                # Convert to UTC
+                dt_utc = dt.astimezone(timezone.utc)
+            
+            dt_str = dt_utc.isoformat()
+            _LOGGER.debug(f"Converted datetime object to UTC: {dt} → {dt_str}")
+            
+        elif isinstance(dt, str):
+            # If string, parse and convert to UTC
+            try:
+                # Parse ISO string
+                dt_obj = datetime.fromisoformat(dt.replace('Z', '+00:00'))
+                
+                if dt_obj.tzinfo is None:
+                    dt_utc = dt_obj.replace(tzinfo=timezone.utc)
+                else:
+                    dt_utc = dt_obj.astimezone(timezone.utc)
+                
+                dt_str = dt_utc.isoformat()
+                _LOGGER.debug(f"Converted datetime string to UTC: {dt} → {dt_str}")
+                
+            except Exception as e:
+                _LOGGER.warning(f"Failed to parse datetime string: {dt}, error: {e}")
+                dt_str = dt  # Keep as is
+        else:
+            _LOGGER.warning(f"Unknown datetime format: {type(dt)} = {dt}")
+            dt_str = str(dt)
+    else:
+        dt_str = ""
+    
+    return {
+        "condition": forecast_item.get("condition", "sunny"),
+        "datetime": dt_str,  # Always UTC ISO string
+        "temperature": forecast_item.get("temperature", 0.0),
+    }
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Display Tools from a config entry."""
     
@@ -197,11 +262,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "store": store,
     }
     
-    # Загружаем сохраненные данные
+    # Load stored data
     stored_data = await store.async_load()
     
     if stored_data:
-        # Восстанавливаем сенсор с сохраненными данными
+        # Restore sensor with stored data
         attributes = {
             "friendly_name": "Display Tools",
             "icon": "mdi:monitor-dashboard",
@@ -213,10 +278,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "requested_keys_count": stored_data.get("requested_keys_count", 0),
         }
         
-        # Добавляем группированные переводы
+        # Add grouped translations
         grouped_translations = stored_data.get("grouped_translations", {})
         for component, component_translations in grouped_translations.items():
-            # Сохраняем как JSON строку для ESPHome
+            # Store as JSON string for ESPHome
             attributes[component] = json.dumps(component_translations, ensure_ascii=False)
         
         hass.states.async_set(
@@ -226,8 +291,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         
         _LOGGER.info(f"Restored Display Tools sensor with {len(grouped_translations)} component groups")
+        
+        # Restore forecast sensors
+        for forecast_type in FORECAST_TYPES:
+            forecast_key = f"forecast_{forecast_type}"
+            if forecast_key in stored_data:
+                forecast_info = stored_data[forecast_key]
+                sensor_id = FORECAST_DAILY_SENSOR if forecast_type == "daily" else FORECAST_HOURLY_SENSOR
+                
+                attributes = {
+                    "friendly_name": f"Display Tools Forecasts ({forecast_type.capitalize()})",
+                    "icon": "mdi:weather-partly-cloudy",
+                    "entity_id": forecast_info.get("entity_id"),
+                    "type": forecast_info.get("type"),
+                    "count": forecast_info.get("count", 0),
+                    "forecasts": forecast_info.get("forecasts", []),
+                }
+                
+                hass.states.async_set(
+                    sensor_id,
+                    forecast_info.get("count", 0),
+                    attributes
+                )
+                
+                _LOGGER.info(f"Restored {sensor_id} with {forecast_info.get('count', 0)} forecast items")
+        
     else:
-        # Создаем начальное состояние сенсора (пустое)
+        # Create initial sensor state (empty)
         hass.states.async_set(
             SENSOR_ENTITY_ID,
             "empty",
@@ -246,7 +336,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             result = {}
             
-            # Получаем переводы для всех категорий
+            # Get translations for all categories
             for category in TRANSLATION_CATEGORIES:
                 translations = await _fetch_translations_for_category(hass, language, category)
                 if translations:
@@ -273,10 +363,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         keys = call.data.get("keys")
         
         try:
-            # Получаем все переводы для категории
+            # Get all translations for category
             translations = await _fetch_translations_for_category(hass, language, category)
             
-            # Фильтруем по ключам если указаны
+            # Filter by keys if specified
             if keys:
                 translations = await _filter_translations_by_keys(translations, keys)
             
@@ -302,37 +392,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         category = call.data.get("category")
         keys_raw = call.data.get("keys")
         
-        # Обработка keys с учетом специфики ESPHome
+        # Process keys with ESPHome specifics handling
         keys = None
         if keys_raw is not None:
             try:
                 if isinstance(keys_raw, list) and len(keys_raw) == 1:
-                    # ESPHome передает список из одного элемента
+                    # ESPHome sends list with single element
                     single_item = keys_raw[0]
                     
                     if isinstance(single_item, str):
-                        # Попробуйте сначала JSON
+                        # Try JSON first
                         try:
                             keys = json.loads(single_item)
                         except json.JSONDecodeError:
-                            # Если не JSON, разделите по запятым и очистите
+                            # If not JSON, split by comma and clean
                             keys = [k.strip() for k in single_item.split(',') if k.strip()]
                     else:
                         keys = [str(single_item)]
                         
                 elif isinstance(keys_raw, list):
-                    # Обычный список
+                    # Regular list
                     keys = keys_raw
                     
                 elif isinstance(keys_raw, str):
-                    # Строка напрямую
+                    # String directly
                     try:
                         keys = json.loads(keys_raw)
                     except json.JSONDecodeError:
                         keys = [k.strip() for k in keys_raw.split(',') if k.strip()]
                         
                 elif hasattr(keys_raw, '__iter__') and not isinstance(keys_raw, (str, bytes)):
-                    # Итерируемый объект
+                    # Iterable object
                     keys = list(keys_raw)
                 else:
                     keys = [str(keys_raw)]
@@ -342,32 +432,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 keys = None
         
         try:
-            # Получаем все переводы для категории
+            # Get all translations for category
             translations = await _fetch_translations_for_category(hass, language, category)
             
-            # Фильтруем по ключам если указаны
+            # Filter by keys if specified
             if keys:
                 translations = await _filter_translations_by_keys(translations, keys)
             
-            # Группируем переводы по компонентам
+            # Group translations by components
             grouped_translations = {}
             for key, value in translations.items():
-                # Извлекаем компонент из ключа (например, vacuum из component.vacuum.entity_component._.state.cleaning)
+                # Extract component from key (e.g., vacuum from component.vacuum.entity_component._.state.cleaning)
                 parts = key.split('.')
                 if len(parts) >= 2 and parts[0] == 'component':
                     component = parts[1]  # vacuum, cover, climate, weather
-                    # Извлекаем последнюю часть как ключ (cleaning, opening, heating, etc.)
+                    # Extract last part as key (cleaning, opening, heating, etc.)
                     final_key = parts[-1]
                     
                     if component not in grouped_translations:
                         grouped_translations[component] = {}
                     grouped_translations[component][final_key] = value
             
-            # Получаем текущие данные из хранилища
+            # Get current data from storage
             store = hass.data[DOMAIN]["store"]
             stored_data = await store.async_load() or {}
             
-            # Обновляем сохраненные данные
+            # Update stored data
             stored_data.update({
                 "language": language,
                 "category": category,
@@ -376,10 +466,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "requested_keys_count": len(keys) if keys else 0,
             })
             
-            # Сохраняем в хранилище
+            # Save to storage
             await store.async_save(stored_data)
             
-            # Создаем атрибуты для сенсора
+            # Create sensor attributes
             attributes = {
                 "friendly_name": "Display Tools",
                 "icon": "mdi:monitor-dashboard",
@@ -391,14 +481,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "requested_keys_count": len(keys) if keys else 0,
             }
             
-            # Добавляем группированные переводы как отдельные атрибуты (JSON строки)
+            # Add grouped translations as separate attributes (JSON strings)
             for component, component_translations in grouped_translations.items():
                 attributes[component] = json.dumps(component_translations, ensure_ascii=False)
             
-            # Обновляем сенсор
+            # Update sensor
             hass.states.async_set(
                 SENSOR_ENTITY_ID,
-                language,  # Состояние = активный язык
+                language,  # State = active language
                 attributes
             )
             
@@ -407,7 +497,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception as e:
             _LOGGER.error(f"Error in get_translations_esphome service: {e}")
             
-            # В случае ошибки устанавливаем состояние error
+            # Set error state on failure
             hass.states.async_set(
                 SENSOR_ENTITY_ID,
                 "error",
@@ -437,6 +527,102 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 
         except Exception as e:
             _LOGGER.error(f"Error in save_media_cover service: {e}")
+    
+    
+    async def handle_get_forecasts(call: ServiceCall) -> None:
+        """Handle the get_forecasts service call - gets weather forecasts and updates sensor."""
+        entity_id = call.data.get("entity_id")
+        forecast_type = call.data.get("type")
+        
+        _LOGGER.info(f"Getting {forecast_type} forecast for {entity_id}")
+        
+        try:
+            # Call weather.get_forecasts service
+            response = await hass.services.async_call(
+                "weather",
+                "get_forecasts",
+                {
+                    "entity_id": entity_id,
+                    "type": forecast_type,
+                },
+                blocking=True,
+                return_response=True,
+            )
+            
+            _LOGGER.debug(f"Raw response from weather.get_forecasts: {response}")
+            
+            # Extract forecast data
+            # Response structure: {entity_id: {forecast: [...]}}
+            forecast_data = None
+            if response and entity_id in response:
+                forecast_data = response[entity_id].get("forecast", [])
+            
+            if not forecast_data:
+                _LOGGER.error(f"No forecast data received for {entity_id}")
+                return
+            
+            # Limit to 12 forecasts
+            forecast_data = forecast_data[:12]
+            
+            # Filter attributes (keep only condition, datetime, temperature)
+            filtered_forecasts = [_filter_forecast_attributes(item) for item in forecast_data]
+            
+            _LOGGER.info(f"Filtered {len(filtered_forecasts)} forecasts with essential attributes only")
+            
+            # Determine which sensor to update
+            sensor_id = FORECAST_DAILY_SENSOR if forecast_type == "daily" else FORECAST_HOURLY_SENSOR
+            
+            # Get current data from storage
+            store = hass.data[DOMAIN]["store"]
+            stored_data = await store.async_load() or {}
+            
+            # Save forecast data
+            forecast_key = f"forecast_{forecast_type}"
+            stored_data[forecast_key] = {
+                "entity_id": entity_id,
+                "type": forecast_type,
+                "forecasts": filtered_forecasts,
+                "count": len(filtered_forecasts),
+            }
+            
+            # Save to storage
+            await store.async_save(stored_data)
+            
+            # Create sensor attributes
+            attributes = {
+                "friendly_name": f"Display Tools Forecasts ({forecast_type.capitalize()})",
+                "icon": "mdi:weather-partly-cloudy",
+                "entity_id": entity_id,
+                "type": forecast_type,
+                "count": len(filtered_forecasts),
+                "forecasts": filtered_forecasts,
+            }
+            
+            # Update sensor
+            # State = number of forecast items
+            hass.states.async_set(
+                sensor_id,
+                len(filtered_forecasts),
+                attributes
+            )
+            
+            _LOGGER.info(f"Updated {sensor_id} with {len(filtered_forecasts)} filtered forecast items")
+            
+        except Exception as e:
+            _LOGGER.error(f"Error in get_forecasts service: {e}", exc_info=True)
+            
+            # Set error state on failure
+            sensor_id = FORECAST_DAILY_SENSOR if forecast_type == "daily" else FORECAST_HOURLY_SENSOR
+            hass.states.async_set(
+                sensor_id,
+                "error",
+                {
+                    "friendly_name": f"Display Tools Forecasts ({forecast_type.capitalize()})",
+                    "icon": "mdi:weather-cloudy-alert",
+                    "error": str(e),
+                }
+            )
+
     
     # Register services
     hass.services.async_register(
@@ -469,6 +655,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         schema=SAVE_MEDIA_COVER_SCHEMA,
     )
     
+    hass.services.async_register(
+        DOMAIN,
+        "get_forecasts",
+        handle_get_forecasts,
+        schema=GET_FORECASTS_SCHEMA,
+    )
+    
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -479,12 +672,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, "get_translations")
     hass.services.async_remove(DOMAIN, "get_translations_esphome")
     hass.services.async_remove(DOMAIN, "save_media_cover")
+    hass.services.async_remove(DOMAIN, "get_forecasts")
     
-    # Remove sensor
+    # Remove sensors
     hass.states.async_remove(SENSOR_ENTITY_ID)
+    hass.states.async_remove(FORECAST_DAILY_SENSOR)
+    hass.states.async_remove(FORECAST_HOURLY_SENSOR)
     
     # Clean up data
     hass.data.pop(DOMAIN, None)
     
     return True
+
 
