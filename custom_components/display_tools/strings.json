@@ -3,18 +3,38 @@
   "config": {
     "step": {
       "user": {
-        "title": "Display Tools",
-        "description": "Set up Display Tools integration"
+        "title": "Display Tools Setup",
+        "description": "Configure Display Tools integration.\n\n**Base URL** - Leave empty for automatic detection (recommended). Only specify if you have a custom setup (Docker, reverse proxy, etc.).\n\nExamples:\n• http://homeassistant.local:8123\n• https://home.example.com\n• http://192.168.1.100:8123",
+        "data": {
+          "base_url": "Base URL (optional)"
+        }
       }
+    },
+    "error": {
+      "invalid_url": "Invalid URL format. Must start with http:// or https://"
     },
     "abort": {
       "single_instance_allowed": "Only a single instance is allowed."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Display Tools Options",
+        "description": "Update Display Tools settings.\n\n**Base URL** - Leave empty for automatic detection (recommended).\n\nCurrent detection priority:\n1. User-configured URL (if set)\n2. get_url() helper method\n3. Internal URL (local network)\n4. External URL (internet)\n5. Localhost fallback",
+        "data": {
+          "base_url": "Base URL (optional)"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Invalid URL format. Must start with http:// or https://"
+    }
+  },
   "services": {
     "get_raw_translations": {
       "name": "Get Raw Translations",
-      "description": "Get ALL translations for a language across all categories",
+      "description": "Get ALL translations for a language across all categories (returns response)",
       "fields": {
         "language": {
           "name": "Language",
@@ -24,7 +44,7 @@
     },
     "get_translations": {
       "name": "Get Translations",
-      "description": "Get translations for specific category and optional keys",
+      "description": "Get translations for specific category and optional keys (returns response)",
       "fields": {
         "language": {
           "name": "Language",
@@ -60,7 +80,7 @@
     },
     "save_media_cover": {
       "name": "Save Media Cover",
-      "description": "Download and process media player cover image",
+      "description": "Download and process media player cover image. Uses automatic URL detection or user-configured base URL.",
       "fields": {
         "entity_id": {
           "name": "Entity ID",

@@ -3,11 +3,14 @@
 DOMAIN = "display_tools"
 STORAGE_KEY = f"{DOMAIN}.storage"
 STORAGE_VERSION = 1
-SENSOR_ENTITY_ID = "sensor.display_tools"
 
-# Sensor IDs for weather forecasts
-FORECAST_DAILY_SENSOR = "sensor.display_tools_forecasts_daily"
-FORECAST_HOURLY_SENSOR = "sensor.display_tools_forecasts_hourly"
+# Config
+CONF_BASE_URL = "base_url"
+
+# Sensor entity IDs
+SENSOR_ENTITY_ID = f"sensor.{DOMAIN}"
+FORECAST_DAILY_SENSOR = f"sensor.{DOMAIN}_forecast_daily"
+FORECAST_HOURLY_SENSOR = f"sensor.{DOMAIN}_forecast_hourly"
 
 # Available translation categories
 TRANSLATION_CATEGORIES = [

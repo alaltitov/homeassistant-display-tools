@@ -20,9 +20,21 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.network import get_url
 from homeassistant.components.frontend import async_get_translations
 
-from .const import DOMAIN, STORAGE_KEY, STORAGE_VERSION, SENSOR_ENTITY_ID, TRANSLATION_CATEGORIES, COVER_SIZES, FORECAST_TYPES, FORECAST_DAILY_SENSOR, FORECAST_HOURLY_SENSOR
+from .const import (
+    DOMAIN,
+    STORAGE_KEY,
+    STORAGE_VERSION,
+    SENSOR_ENTITY_ID,
+    TRANSLATION_CATEGORIES,
+    COVER_SIZES,
+    FORECAST_TYPES,
+    FORECAST_DAILY_SENSOR,
+    FORECAST_HOURLY_SENSOR,
+    CONF_BASE_URL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,6 +79,77 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Display Tools integration from configuration."""
     return True
 
+
+def _get_base_url(hass: HomeAssistant, config_entry: ConfigEntry | None = None) -> str:
+    """
+    Get base URL for Home Assistant with multiple fallback strategies.
+    
+    Priority:
+    1. User-configured URL from integration settings (if provided)
+    2. get_url() helper (uses internal_url or external_url)
+    3. hass.config.internal_url (local network URL)
+    4. hass.config.external_url (internet URL)
+    5. Fallback to localhost with detected port
+    
+    Args:
+        hass: Home Assistant instance
+        config_entry: Config entry with user settings (optional)
+        
+    Returns:
+        str: Base URL without trailing slash
+    """
+    base_url = None
+    source = "unknown"
+    
+    # Strategy 1: User-configured URL (highest priority)
+    if config_entry:
+        user_url = config_entry.data.get(CONF_BASE_URL)
+        if user_url:
+            base_url = user_url.rstrip('/')
+            source = "user_config"
+            _LOGGER.debug(f"Using user-configured base_url: {base_url}")
+            return base_url
+    
+    # Strategy 2: Use get_url() helper (recommended by HA)
+    try:
+        base_url = get_url(hass)
+        if base_url:
+            base_url = base_url.rstrip('/')
+            source = "get_url_helper"
+            _LOGGER.debug(f"Using get_url() helper: {base_url}")
+            return base_url
+    except Exception as e:
+        _LOGGER.debug(f"get_url() helper failed: {e}")
+    
+    # Strategy 3: Internal URL (local network)
+    if hass.config.internal_url:
+        base_url = hass.config.internal_url.rstrip('/')
+        source = "internal_url"
+        _LOGGER.debug(f"Using internal_url: {base_url}")
+        return base_url
+    
+    # Strategy 4: External URL (internet)
+    if hass.config.external_url:
+        base_url = hass.config.external_url.rstrip('/')
+        source = "external_url"
+        _LOGGER.debug(f"Using external_url: {base_url}")
+        return base_url
+    
+    # Strategy 5: Fallback to localhost (last resort)
+    try:
+        port = hass.http.server_port
+        base_url = f"http://localhost:{port}"
+        source = "localhost_fallback"
+        _LOGGER.debug(f"Using localhost fallback: {base_url}")
+        return base_url
+    except Exception as e:
+        _LOGGER.error(f"Failed to get server port: {e}")
+        base_url = "http://localhost:8123"
+        source = "hardcoded_fallback"
+        _LOGGER.warning(f"Using hardcoded fallback: {base_url}")
+        return base_url
+
+
 async def _fetch_translations_for_category(hass: HomeAssistant, language: str, category: str) -> dict:
     """
     Fetch all translations for a specific category and language.
@@ -85,6 +168,7 @@ async def _fetch_translations_for_category(hass: HomeAssistant, language: str, c
     except Exception as e:
         _LOGGER.error(f"Error fetching translations for {language}.{category}: {e}")
         return {}
+
 
 async def _filter_translations_by_keys(translations: dict, keys: list[str]) -> dict:
     """
@@ -108,6 +192,7 @@ async def _filter_translations_by_keys(translations: dict, keys: list[str]) -> d
             filtered[key] = key  # Fallback to key itself
     
     return filtered
+
 
 async def _download_and_process_cover(hass: HomeAssistant, entity_id: str, size: str) -> bool:
     """
@@ -136,10 +221,17 @@ async def _download_and_process_cover(hass: HomeAssistant, entity_id: str, size:
         
         # Build full URL if relative path
         if entity_picture.startswith('/'):
-            base_url = f"http://localhost:{hass.http.server_port}"
+            # Get config entry for user settings
+            config_entry = hass.data[DOMAIN].get("config_entry")
+            
+            # Get base URL using multi-strategy approach
+            base_url = _get_base_url(hass, config_entry)
+            
             image_url = f"{base_url}{entity_picture}"
+            _LOGGER.info(f"Built image URL: {image_url}")
         else:
             image_url = entity_picture
+            _LOGGER.info(f"Using absolute image URL: {image_url}")
         
         # Get target size
         target_size = COVER_SIZES[size]
@@ -193,6 +285,7 @@ async def _download_and_process_cover(hass: HomeAssistant, entity_id: str, size:
     except Exception as e:
         _LOGGER.error(f"Error in _download_and_process_cover: {e}")
         return False
+
 
 def _filter_forecast_attributes(forecast_item: dict) -> dict:
     """
@@ -251,16 +344,23 @@ def _filter_forecast_attributes(forecast_item: dict) -> dict:
         "temperature": forecast_item.get("temperature", 0.0),
     }
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Display Tools from a config entry."""
     
+    # Initialize hass.data
+    hass.data.setdefault(DOMAIN, {})
+    
+    # Store config entry for accessing user settings
+    hass.data[DOMAIN]["config_entry"] = entry
+    
     # Initialize storage
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+    hass.data[DOMAIN]["store"] = store
     
-    # Initialize hass.data
-    hass.data[DOMAIN] = {
-        "store": store,
-    }
+    # Log current base URL configuration
+    base_url = _get_base_url(hass, entry)
+    _LOGGER.info(f"Display Tools initialized with base_url: {base_url}")
     
     # Load stored data
     stored_data = await store.async_load()
@@ -276,6 +376,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "available_categories": TRANSLATION_CATEGORIES,
             "available_cover_sizes": list(COVER_SIZES.keys()),
             "requested_keys_count": stored_data.get("requested_keys_count", 0),
+            "base_url": base_url,
         }
         
         # Add grouped translations
@@ -326,6 +427,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "icon": "mdi:monitor-dashboard",
                 "available_categories": TRANSLATION_CATEGORIES,
                 "available_cover_sizes": list(COVER_SIZES.keys()),
+                "base_url": base_url,
             }
         )
     
@@ -469,6 +571,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Save to storage
             await store.async_save(stored_data)
             
+            # Get current base URL
+            base_url = _get_base_url(hass, entry)
+            
             # Create sensor attributes
             attributes = {
                 "friendly_name": "Display Tools",
@@ -479,6 +584,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "available_categories": TRANSLATION_CATEGORIES,
                 "available_cover_sizes": list(COVER_SIZES.keys()),
                 "requested_keys_count": len(keys) if keys else 0,
+                "base_url": base_url,
             }
             
             # Add grouped translations as separate attributes (JSON strings)
@@ -606,10 +712,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 attributes
             )
             
-            _LOGGER.info(f"Updated {sensor_id} with {len(filtered_forecasts)} filtered forecast items")
+            _LOGGER.info(f"Updated {sensor_id} with {len(filtered_forecasts)} forecast items")
             
         except Exception as e:
-            _LOGGER.error(f"Error in get_forecasts service: {e}", exc_info=True)
+            _LOGGER.error(f"Error in get_forecasts service: {e}")
             
             # Set error state on failure
             sensor_id = FORECAST_DAILY_SENSOR if forecast_type == "daily" else FORECAST_HOURLY_SENSOR
@@ -618,11 +724,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "error",
                 {
                     "friendly_name": f"Display Tools Forecasts ({forecast_type.capitalize()})",
-                    "icon": "mdi:weather-cloudy-alert",
+                    "icon": "mdi:weather-off",
                     "error": str(e),
                 }
             )
-
     
     # Register services
     hass.services.async_register(
@@ -662,25 +767,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         schema=GET_FORECASTS_SCHEMA,
     )
     
+    _LOGGER.info("Display Tools integration setup completed")
+    
     return True
+
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     
-    # Remove services
+    # Unregister services
     hass.services.async_remove(DOMAIN, "get_raw_translations")
     hass.services.async_remove(DOMAIN, "get_translations")
     hass.services.async_remove(DOMAIN, "get_translations_esphome")
     hass.services.async_remove(DOMAIN, "save_media_cover")
     hass.services.async_remove(DOMAIN, "get_forecasts")
     
-    # Remove sensors
+    # Remove sensor entities
     hass.states.async_remove(SENSOR_ENTITY_ID)
     hass.states.async_remove(FORECAST_DAILY_SENSOR)
     hass.states.async_remove(FORECAST_HOURLY_SENSOR)
     
-    # Clean up data
+    # Clean up hass.data
     hass.data.pop(DOMAIN, None)
+    
+    _LOGGER.info("Display Tools integration unloaded")
     
     return True
 

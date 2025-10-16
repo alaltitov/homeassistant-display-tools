@@ -8,6 +8,7 @@ get_raw_translations:
       name: Language
       description: Language code (e.g., 'ru', 'en', 'de')
       required: true
+      example: "ru"
       selector:
         text:
 
@@ -21,12 +22,14 @@ get_translations:
       name: Language
       description: Language code (e.g., 'ru', 'en', 'de')
       required: true
+      example: "ru"
       selector:
         text:
     category:
       name: Category
       description: Translation category
       required: true
+      example: "entity_component"
       selector:
         select:
           options:
@@ -50,6 +53,7 @@ get_translations:
       name: Translation Keys (optional)
       description: List of specific translation keys (if not provided, returns all keys for category)
       required: false
+      example: ["component.vacuum.entity_component._.state.cleaning"]
       selector:
         object:
 
@@ -61,12 +65,14 @@ get_translations_esphome:
       name: Language
       description: Language code (e.g., 'ru', 'en', 'de')
       required: true
+      example: "ru"
       selector:
         text:
     category:
       name: Category
       description: Translation category
       required: true
+      example: "entity_component"
       selector:
         select:
           options:
@@ -90,17 +96,19 @@ get_translations_esphome:
       name: Translation Keys (optional)
       description: List of specific translation keys (if not provided, returns all keys for category)
       required: false
+      example: ["component.vacuum.entity_component._.state.cleaning", "component.cover.entity_component._.state.opening"]
       selector:
         object:
 
 save_media_cover:
   name: Save Media Cover
-  description: Download and process media player cover image
+  description: Download and process media player cover image. Uses automatic URL detection or user-configured base URL.
   fields:
     entity_id:
       name: Entity ID
       description: Media player entity ID
       required: true
+      example: "media_player.spotify"
       selector:
         entity:
           domain: media_player
@@ -108,6 +116,7 @@ save_media_cover:
       name: Size
       description: Image size preset
       required: true
+      example: "small"
       selector:
         select:
           options:
@@ -115,8 +124,7 @@ save_media_cover:
               label: "Small (120x120)"
             - value: "large"
               label: "Large (160x160)"
-              
-              
+
 get_forecasts:
   name: Get Weather Forecasts
   description: Get weather forecasts and update sensor for ESPHome access
@@ -125,6 +133,7 @@ get_forecasts:
       name: Entity ID
       description: Weather entity ID
       required: true
+      example: "weather.home"
       selector:
         entity:
           domain: weather
@@ -132,6 +141,7 @@ get_forecasts:
       name: Forecast Type
       description: Type of forecast (daily or hourly)
       required: true
+      example: "daily"
       selector:
         select:
           options:
