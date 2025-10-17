@@ -9,8 +9,8 @@ CONF_BASE_URL = "base_url"
 
 # Sensor entity IDs
 SENSOR_ENTITY_ID = f"sensor.{DOMAIN}"
-FORECAST_DAILY_SENSOR = f"sensor.{DOMAIN}_forecast_daily"
-FORECAST_HOURLY_SENSOR = f"sensor.{DOMAIN}_forecast_hourly"
+FORECAST_DAILY_SENSOR = f"sensor.{DOMAIN}_forecasts_daily"
+FORECAST_HOURLY_SENSOR = f"sensor.{DOMAIN}_forecasts_hourly"
 
 # Available translation categories
 TRANSLATION_CATEGORIES = [
