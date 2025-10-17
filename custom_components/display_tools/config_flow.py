@@ -59,15 +59,11 @@ class DisplayToolsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
-        return DisplayToolsOptionsFlow(config_entry)
+        return DisplayToolsOptionsFlow()
 
 
 class DisplayToolsOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Display Tools."""
-
-    def __init__(self, config_entry):
-        """Initialize options flow."""
-        self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
         """Manage the options."""
@@ -80,7 +76,7 @@ class DisplayToolsOptionsFlow(config_entries.OptionsFlow):
             if base_url and not base_url.startswith(("http://", "https://")):
                 errors[CONF_BASE_URL] = "invalid_url"
             else:
-                # Update config entry
+                # Update config entry data (not options)
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
                     data={
@@ -89,7 +85,7 @@ class DisplayToolsOptionsFlow(config_entries.OptionsFlow):
                 )
                 return self.async_create_entry(title="", data={})
 
-        # Get current value
+        # Get current value from config_entry.data
         current_base_url = self.config_entry.data.get(CONF_BASE_URL) or ""
 
         return self.async_show_form(

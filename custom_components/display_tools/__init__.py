@@ -245,42 +245,49 @@ async def _download_and_process_cover(hass: HomeAssistant, entity_id: str, size:
                 
                 image_data = await response.read()
         
-        # Process image with PIL
-        try:
-            # Open image
-            img = Image.open(BytesIO(image_data))
-            
-            # Convert to RGB if needed (for JPEG)
-            if img.mode in ('RGBA', 'P'):
-                img = img.convert('RGB')
-            
-            # Resize with aspect ratio preserved
-            img.thumbnail(target_size, Image.Resampling.LANCZOS)
-            
-            # Create new image with exact dimensions and center content
-            new_img = Image.new('RGB', target_size, (0, 0, 0))
-            
-            # Calculate position for centering
-            x = (target_size[0] - img.width) // 2
-            y = (target_size[1] - img.height) // 2
-            
-            # Paste image centered
-            new_img.paste(img, (x, y))
-            
-            # Create directory if not exists
-            output_dir = "/config/www/display_tools"
-            os.makedirs(output_dir, exist_ok=True)
-            
-            # Save image
-            output_path = os.path.join(output_dir, "cover.jpeg")
-            new_img.save(output_path, "JPEG", quality=85)
-            
-            _LOGGER.info(f"Successfully saved cover image to {output_path} with size {target_size}")
-            return True
-            
-        except Exception as e:
-            _LOGGER.error(f"Error processing image: {e}")
-            return False
+        # Create directory if not exists (async)
+        output_dir = "/config/www/display_tools"
+        await hass.async_add_executor_job(os.makedirs, output_dir, True)
+        
+        output_path = os.path.join(output_dir, "cover.jpeg")
+        
+        # Process and save image in executor (non-blocking)
+        def process_and_save_image():
+            """Process and save image synchronously in executor."""
+            try:
+                # Open image
+                img = Image.open(BytesIO(image_data))
+                
+                # Convert to RGB if needed (for JPEG)
+                if img.mode in ('RGBA', 'P'):
+                    img = img.convert('RGB')
+                
+                # Resize with aspect ratio preserved
+                img.thumbnail(target_size, Image.Resampling.LANCZOS)
+                
+                # Create new image with exact dimensions and center content
+                new_img = Image.new('RGB', target_size, (0, 0, 0))
+                
+                # Calculate position for centering
+                x = (target_size[0] - img.width) // 2
+                y = (target_size[1] - img.height) // 2
+                
+                # Paste image centered
+                new_img.paste(img, (x, y))
+                
+                # Save image (this will run in executor, not blocking event loop)
+                new_img.save(output_path, "JPEG", quality=85)
+                
+                _LOGGER.info(f"Successfully saved cover image to {output_path} with size {target_size}")
+                return True
+                
+            except Exception as e:
+                _LOGGER.error(f"Error processing image: {e}")
+                return False
+        
+        # Run image processing in executor
+        result = await hass.async_add_executor_job(process_and_save_image)
+        return result
             
     except Exception as e:
         _LOGGER.error(f"Error in _download_and_process_cover: {e}")
