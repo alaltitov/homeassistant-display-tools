@@ -38,6 +38,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 # Schema for get_raw_translations service
 GET_RAW_TRANSLATIONS_SCHEMA = vol.Schema({
     vol.Required('language'): cv.string,

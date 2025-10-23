@@ -3,6 +3,9 @@ get_raw_translations:
   description: Get ALL translations for a language across all categories (returns response)
   response:
     optional: false
+  target:
+    entity:
+      integration: display_tools
   fields:
     language:
       name: Language
@@ -17,6 +20,9 @@ get_translations:
   description: Get translations for specific category and optional keys (returns response)
   response:
     optional: false
+  target:
+    entity:
+      integration: display_tools
   fields:
     language:
       name: Language
