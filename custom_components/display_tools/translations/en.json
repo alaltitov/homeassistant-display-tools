@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Display Tools Setup",
-        "description": "Configure Display Tools integration.\n\n**Base URL** - Leave empty for automatic detection (recommended). Only specify if you have a custom setup (Docker, reverse proxy, etc.).\n\nExamples:\n• http://homeassistant.local:8123\n• https://home.example.com\n• http://192.168.1.100:8123",
+        "description": "Configure Display Tools integration.\n\n**Base URL** - Leave empty for automatic detection (recommended). If needed, enter the full URL of your Home Assistant instance (e.g., http://your-instance:port).",
         "data": {
           "base_url": "Base URL (optional)"
         }
