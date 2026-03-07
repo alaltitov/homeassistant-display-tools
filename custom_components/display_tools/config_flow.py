@@ -59,15 +59,11 @@ class DisplayToolsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
-        return DisplayToolsOptionsFlow(config_entry)
+        return DisplayToolsOptionsFlow()
 
 
 class DisplayToolsOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Display Tools."""
-
-    def __init__(self, config_entry):
-        """Initialize options flow."""
-        self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
         """Manage the options."""
